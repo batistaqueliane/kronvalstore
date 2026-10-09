@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KRONVAL Store</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome para Ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS (XLSX) para Exportação de Planilhas em Excel -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        .product-card img {
+            height: 200px;
+            object-fit: cover;
+        }
+        body {
+            background-color: #f8f9fa;
+        }
+        /* Substituição global da cor principal para #891924 nos botões e elementos primários */
+        .btn-primary {
+            background-color: #891924 !important;
+            border-color: #891924 !important;
+        }
+        .btn-primary:hover, .btn-primary:focus {
+            background-color: #6e131c !important;
+            border-color: #6e131c !important;
+        }
+        .text-primary {
+            color: #891924 !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Navegação -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+        <div class="container">
+            <a class="navbar-brand" href="#"><i class="fa-solid fa-store me-2"></i>KRONVAL Store</a>
+            <div>
+                <!-- Botões do Admin -->
+                <div id="admin-nav-buttons" class="d-none">
+                    <button class="btn btn-outline-warning btn-sm me-2" data-bs-toggle="modal" data-bs-target="#ordersModal">
+                        <i class="fa-solid fa-box-open me-1"></i> Pedidos <span id="orders-badge" class="badge bg-danger">0</span>
+                    </button>
+                    <button class="btn btn-outline-light btn-sm me-2" data-bs-toggle="modal" data-bs-target="#adminModal">
+                        <i class="fa-solid fa-gear me-1"></i> Painel Produtos
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" onclick="logoutAdmin()">
+                        <i class="fa-solid fa-right-from-bracket"></i> Sair
+                    </button>
+                </div>
+                <!-- Botão Área Restrita -->
+                <div id="client-nav-button">
+                    <button class="btn btn-outline-secondary btn-sm text-white border-0" data-bs-toggle="modal" data-bs-target="#loginModal">
+                        <i class="fa-solid fa-lock me-1"></i> Área Restrita
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Cabeçalho / Banner com a cor personalizada -->
+    <header style="background-color: #891924 !important;" class="text-white text-center py-5 mb-4 shadow-sm">
+        <div class="container">
+            <h1 class="fw-bold">Nossos Produtos</h1>
+            <p class="lead mb-0">Escolha seu produto, preencha seus dados de entrega e finalize com facilidade!</p>
+        </div>
+    </header>
+
+    <!-- Vitrine -->
+    <main class="container mb-5">
+        <div id="product-list" class="row row-cols-1 row-cols-md-3 g-4">
+            <!-- Produtos inseridos via JS -->
+        </div>
+    </main>
+
+    <!-- Modal de Login Admin -->
+    <div class="modal fade" id="loginModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-lock me-2"></i>Acesso Restrito</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="login-form">
+                        <div class="mb-3">
+                            <label for="admin-password" class="form-label">Senha do Administrador</label>
+                            <input type="password" class="form-control" id="admin-password" required placeholder="Digite a senha">
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Entrar no Sistema</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Checkout (Coleta de Dados de Entrega) -->
+    <div class="modal fade" id="checkoutModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-truck-fast me-2"></i>Informações de Entrega</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="checkout-form">
+                        <input type="hidden" id="checkout-product-id">
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Produto Selecionado:</label>
+                            <p id="checkout-product-name" class="text-primary fs-5 mb-0"></p>
+                            <p id="checkout-product-price" class="text-success fw-bold"></p>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="client-name" class="form-label">Nome Completo</label>
+                            <input type="text" class="form-control" id="client-name" required placeholder="Seu nome completo">
+                        </div>
+                        <div class="mb-3">
+                            <label for="client-phone" class="form-label">Telefone / WhatsApp</label>
+                            <input type="text" class="form-control" id="client-phone" required placeholder="(99) 99999-9999">
+                        </div>
+                        <div class="mb-3">
+                            <label for="client-email" class="form-label">E-mail</label>
+                            <input type="email" class="form-control" id="client-email" required placeholder="seu@email.com">
+                        </div>
+                        <div class="mb-3">
+                            <label for="client-address" class="form-label">Endereço de Entrega Completo</label>
+                            <textarea class="form-control" id="client-address" rows="3" required placeholder="Rua, Número, Bairro, Cidade - Estado, CEP"></textarea>
+                        </div>
+
+                        <button type="submit" class="btn btn-success w-100 py-2 fw-bold">
+                            <i class="fa-solid fa-check me-1"></i> Finalizar Pedido
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Notificação / Confirmação do Pedido para o Cliente -->
+    <div class="modal fade" id="successModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content p-3">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="modal-title fw-bold text-success"><i class="fa-solid fa-circle-check me-2"></i>Pedido Registrado!</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning text-center py-2 mb-3">
+                        <small class="fw-bold"><i class="fa-solid fa-clock me-1"></i> Status: Aguardando Confirmação do Pagamento</small>
+                    </div>
+                    
+                    <p class="text-muted small mb-3">Guarde os códigos abaixo para acompanhar o seu pedido:</p>
+                    
+                    <ul class="list-group mb-3">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span><i class="fa-solid fa-hashtag text-secondary me-1"></i> <strong>Código do Pedido:</strong></span>
+                            <span id="modal-order-code" class="badge bg-dark fs-6"></span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span><i class="fa-solid fa-tag text-secondary me-1"></i> <strong>Código do Produto:</strong></span>
+                            <span id="modal-product-code" class="badge bg-secondary"></span>
+                        </li>
+                        <li class="list-group-item">
+                            <strong class="text-dark" id="modal-product-title"></strong><br>
+                            <small class="text-muted" id="modal-client-info"></small>
+                        </li>
+                    </ul>
+
+                    <p class="small text-muted text-center mb-4">
+                        Assim que o pagamento for confirmado, iniciaremos a separação do seu produto com todo o cuidado para envio! 📦✨
+                    </p>
+
+                    <div class="d-grid gap-2">
+                        <a id="btn-go-pay" href="#" target="_blank" class="btn btn-success py-2 fw-bold">
+                            <i class="fa-solid fa-credit-card me-1"></i> Ir para o Link de Pagamento
+                        </a>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Gestão de Pedidos (Admin) -->
+    <div class="modal fade" id="ordersModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-box-archive me-2"></i>Gerenciar Pedidos e Entregas</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <p class="text-muted mb-0">Acompanhe os códigos dos pedidos, dados dos clientes e gerencie o envio.</p>
+                        <!-- Botão de Exportação para Excel -->
+                        <button class="btn btn-success btn-sm fw-bold" onclick="exportOrdersToExcel()">
+                            <i class="fa-solid fa-file-excel me-1"></i> Exportar para Excel (.xlsx)
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Cód. Pedido / Data</th>
+                                    <th>Cliente</th>
+                                    <th>Produto (Cód.)</th>
+                                    <th>Endereço</th>
+                                    <th>Status Atual</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="orders-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Painel Produtos (Admin) -->
+    <div class="modal fade" id="adminModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-sliders me-2"></i>Gerenciar Produtos da Vitrine</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="product-form" class="mb-4 bg-light p-3 rounded border">
+                        <h6 class="fw-bold mb-3">Adicionar Novo Produto</h6>
+                        <div class="mb-3">
+                            <label for="title" class="form-label">Nome do Produto</label>
+                            <input type="text" class="form-control" id="title" required placeholder="Ex: Camiseta Exclusiva">
+                        </div>
+                        <div class="mb-3">
+                            <label for="price" class="form-label">Preço (R$)</label>
+                            <input type="text" class="form-control" id="price" required placeholder="Ex: 89,90">
+                        </div>
+                        <div class="mb-3">
+                            <label for="image" class="form-label">Link da Foto (URL da Imagem)</label>
+                            <input type="url" class="form-control" id="image" required placeholder="https://exemplo.com/foto.jpg">
+                        </div>
+                        <div class="mb-3">
+                            <label for="payLink" class="form-label">Link de Pagamento Externo (Mercado Pago, etc)</label>
+                            <input type="url" class="form-control" id="payLink" required placeholder="https://link.mercadopago.com.br/...">
+                        </div>
+                        <button type="submit" class="btn btn-success w-100"><i class="fa-solid fa-plus me-1"></i> Cadastrar Produto</button>
+                    </form>
+
+                    <h6 class="fw-bold mb-3">Produtos Cadastrados</h6>
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Cód.</th>
+                                    <th>Foto</th>
+                                    <th>Nome</th>
+                                    <th>Preço</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-product-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rodapé -->
+    <footer class="bg-dark text-white text-center py-3 mt-auto">
+        <div class="container">
+            <p class="mb-0">&copy; 2026 - Todos os direitos reservados.</p>
+        </div>
+    </footer>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        const ADMIN_PASSWORD = '1234'; 
+
+        const STORAGE_PRODUCTS = 'minha_vitrine_produtos_v6';
+        const STORAGE_ORDERS = 'minha_vitrine_pedidos_v6';
+        const STORAGE_AUTH = 'minha_vitrine_auth_v6';
+
+        const defaultProducts = [
+            {
+                id: 1,
+                code: 'PROD-101',
+                title: 'Exemplo: Produto Demonstrativo',
+                price: '99,90',
+                image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60',
+                payLink: 'https://www.mercadopago.com.br'
+            }
+        ];
+
+        function getProducts() {
+            const data = localStorage.getItem(STORAGE_PRODUCTS);
+            return data ? JSON.parse(data) : defaultProducts;
+        }
+
+        function saveProducts(products) {
+            localStorage.setItem(STORAGE_PRODUCTS, JSON.stringify(products));
+        }
+
+        function getOrders() {
+            const data = localStorage.getItem(STORAGE_ORDERS);
+            return data ? JSON.parse(data) : [];
+        }
+
+        function saveOrders(orders) {
+            localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
+        }
+
+        function checkAuth() {
+            const isAuth = sessionStorage.getItem(STORAGE_AUTH) === 'true';
+            const clientNav = document.getElementById('client-nav-button');
+            const adminNav = document.getElementById('admin-nav-buttons');
+
+            if (isAuth) {
+                clientNav.classList.add('d-none');
+                adminNav.classList.remove('d-none');
+            } else {
+                clientNav.classList.remove('d-none');
+                adminNav.classList.add('d-none');
+            }
+        }
+
+        document.getElementById('login-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const pass = document.getElementById('admin-password').value;
+            if (pass === ADMIN_PASSWORD) {
+                sessionStorage.setItem(STORAGE_AUTH, 'true');
+                checkAuth();
+                bootstrap.Modal.getInstance(document.getElementById('loginModal')).hide();
+                this.reset();
+                alert('Bem-vindo ao painel administrativo!');
+            } else {
+                alert('Senha incorreta!');
+            }
+        });
+
+        window.logoutAdmin = function() {
+            sessionStorage.removeItem(STORAGE_AUTH);
+            checkAuth();
+            alert('Você saiu do modo administrador.');
+        };
+
+        function render() {
+            const products = getProducts();
+            const productList = document.getElementById('product-list');
+            const adminTable = document.getElementById('admin-product-table');
+
+            productList.innerHTML = '';
+            adminTable.innerHTML = '';
+
+            products.forEach(product => {
+                if(!product.code) product.code = 'PROD-' + Math.floor(100 + Math.random() * 900);
+
+                productList.innerHTML += `
+                    <div class="col">
+                        <div class="card h-100 product-card shadow-sm border-0">
+                            <img src="${product.image}" class="card-img-top" alt="${product.title}">
+                            <div class="card-body d-flex flex-column">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="badge bg-secondary">${product.code}</span>
+                                    <span class="text-success fw-bold fs-5">R$ ${product.price}</span>
+                                </div>
+                                <h5 class="card-title">${product.title}</h5>
+                                <button class="btn btn-primary mt-auto" onclick="openCheckout(${product.id})">
+                                    <i class="fa-solid fa-cart-shopping me-1"></i> Comprar Agora
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                adminTable.innerHTML += `
+                    <tr>
+                        <td><span class="badge bg-secondary">${product.code}</span></td>
+                        <td><img src="${product.image}" width="40" height="40" class="rounded object-fit-cover"></td>
+                        <td>${product.title}</td>
+                        <td>R$ ${product.price}</td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" onclick="deleteProduct(${product.id})">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            renderOrders();
+        }
+
+        window.openCheckout = function(id) {
+            const products = getProducts();
+            const product = products.find(p => p.id === id);
+            if (!product) return;
+
+            document.getElementById('checkout-product-id').value = product.id;
+            document.getElementById('checkout-product-name').innerText = `${product.title} (${product.code})`;
+            document.getElementById('checkout-product-price').innerText = `R$ ${product.price}`;
+
+            const modal = new bootstrap.Modal(document.getElementById('checkoutModal'));
+            modal.show();
+        };
+
+        document.getElementById('checkout-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const productId = document.getElementById('checkout-product-id').value;
+            const products = getProducts();
+            const product = products.find(p => p.id == productId);
+
+            const orderCode = 'PED-' + Math.floor(10000 + Math.random() * 90000);
+            const productCode = product ? product.code : 'PROD-000';
+
+            const clientName = document.getElementById('client-name').value;
+            const clientPhone = document.getElementById('client-phone').value;
+            const clientEmail = document.getElementById('client-email').value;
+            const clientAddress = document.getElementById('client-address').value;
+
+            const newOrder = {
+                id: Date.now(),
+                orderCode: orderCode,
+                productCode: productCode,
+                date: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+                productName: product ? product.title : 'Produto',
+                productPrice: product ? product.price : '0,00',
+                name: clientName,
+                phone: clientPhone,
+                email: clientEmail,
+                address: clientAddress,
+                status: 'Aguardando Pagamento'
+            };
+
+            const orders = getOrders();
+            orders.unshift(newOrder);
+            saveOrders(orders);
+
+            bootstrap.Modal.getInstance(document.getElementById('checkoutModal')).hide();
+            this.reset();
+            renderOrders();
+
+            document.getElementById('modal-order-code').innerText = orderCode;
+            document.getElementById('modal-product-code').innerText = productCode;
+            document.getElementById('modal-product-title').innerText = product ? product.title : 'Produto';
+            document.getElementById('modal-client-info').innerText = `${clientName} • ${clientPhone}`;
+
+            if (product && product.payLink) {
+                document.getElementById('btn-go-pay').href = product.payLink;
+            }
+
+            const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+            successModal.show();
+        });
+
+        function renderOrders() {
+            const orders = getOrders();
+            const ordersTable = document.getElementById('orders-table-body');
+            const ordersBadge = document.getElementById('orders-badge');
+
+            ordersBadge.innerText = orders.length;
+            ordersTable.innerHTML = '';
+
+            if (orders.length === 0) {
+                ordersTable.innerHTML = `<tr><td colspan="6" class="text-center text-muted">Nenhum pedido registrado ainda.</td></tr>`;
+                return;
+            }
+
+            orders.forEach(order => {
+                let badgeClass = 'bg-warning text-dark';
+                if (order.status === 'Separando o Produto') badgeClass = 'bg-info text-dark';
+                if (order.status === 'Enviado para o Endereço') badgeClass = 'bg-success';
+
+                ordersTable.innerHTML += `
+                    <tr>
+                        <td>
+                            <strong class="text-primary">${order.orderCode}</strong><br>
+                            <small class="text-muted">${order.date}</small>
+                        </td>
+                        <td>
+                            <strong>${order.name}</strong><br>
+                            <small class="text-muted">${order.phone}</small>
+                        </td>
+                        <td>
+                            ${order.productName}<br>
+                            <span class="badge bg-secondary">${order.productCode}</span>
+                        </td>
+                        <td><small>${order.address}</small></td>
+                        <td><span class="badge ${badgeClass}">${order.status}</span></td>
+                        <td>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                    Status
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="#" onclick="updateStatus(${order.id}, 'Aguardando Pagamento')">Aguardando Pagamento</a></li>
+                                    <li><a class="dropdown-item" href="#" onclick="updateStatus(${order.id}, 'Separando o Produto')">Separando o Produto</a></li>
+                                    <li><a class="dropdown-item" href="#" onclick="updateStatus(${order.id}, 'Enviado para o Endereço')">Enviado para o Endereço</a></li>
+                                </ul>
+                            </div>
+                            <button class="btn btn-success btn-sm mt-1" onclick="sendWhatsAppManual('${order.phone}', '${order.name}', '${order.productName}', '${order.orderCode}', '${order.status}')" title="Avisar WhatsApp">
+                                <i class="fa-brands fa-whatsapp"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        window.updateStatus = function(id, newStatus) {
+            let orders = getOrders();
+            const order = orders.find(o => o.id === id);
+            if (order) {
+                order.status = newStatus;
+                saveOrders(orders);
+                renderOrders();
+            }
+        };
+
+        window.sendWhatsAppManual = function(phone, clientName, productName, orderCode, status) {
+            const cleanPhone = phone.replace(/\D/g, '');
+            let message = `Olá, ${clientName}! Seu pedido (*${orderCode}*) referente ao item *${productName}* está com status: *Aguardando Confirmação do Pagamento*. 📦✨`;
+            
+            if (status === 'Separando o Produto') {
+                message = `Olá, ${clientName}! Pagamento confirmado para o pedido (*${orderCode}*)! Já estamos separando o seu produto (*${productName}*) com todo o cuidado. 📦✨`;
+            } else if (status === 'Enviado para o Endereço') {
+                message = `Olá, ${clientName}! Seu pedido (*${orderCode}*) contendo *${productName}* já foi postado e está a caminho do seu endereço! 🚚💨`;
+            }
+
+            const url = `https://api.whatsapp.com/send?phone=55${cleanPhone}&text=${encodeURIComponent(message)}`;
+            window.open(url, '_blank');
+        };
+
+        // Função para Exportar a Tabela de Pedidos para Excel (.xlsx)
+        window.exportOrdersToExcel = function() {
+            const orders = getOrders();
+            if (orders.length === 0) {
+                alert('Não há pedidos cadastrados para exportar!');
+                return;
+            }
+
+            // Mapeamento dos dados para colunas formatadas em Português
+            const dataToExport = orders.map(order => ({
+                'Código do Pedido': order.orderCode,
+                'Data / Hora': order.date,
+                'Código do Produto': order.productCode,
+                'Produto': order.productName,
+                'Valor (R$)': order.productPrice,
+                'Nome do Cliente': order.name,
+                'Telefone / WhatsApp': order.phone,
+                'E-mail': order.email,
+                'Endereço de Entrega': order.address,
+                'Status do Pedido': order.status
+            }));
+
+            // Criação da planilha Excel
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Pedidos");
+
+            // Define largura automática para as colunas
+            const colWidths = [
+                { wch: 15 }, // Cód Pedido
+                { wch: 18 }, // Data/Hora
+                { wch: 16 }, // Cód Produto
+                { wch: 25 }, // Produto
+                { wch: 12 }, // Valor
+                { wch: 25 }, // Cliente
+                { wch: 18 }, // Telefone
+                { wch: 25 }, // Email
+                { wch: 40 }, // Endereço
+                { wch: 22 }  // Status
+            ];
+            worksheet['!cols'] = colWidths;
+
+            // Gera o nome do arquivo com a data atual (ex: Pedidos_Vendas_2026-10-09.xlsx)
+            const today = new Date().toISOString().split('T')[0];
+            XLSX.writeFile(workbook, `Pedidos_Vendas_${today}.xlsx`);
+        };
+
+        document.getElementById('product-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const newProduct = {
+                id: Date.now(),
+                code: 'PROD-' + Math.floor(100 + Math.random() * 900),
+                title: document.getElementById('title').value,
+                price: document.getElementById('price').value,
+                image: document.getElementById('image').value,
+                payLink: document.getElementById('payLink').value
+            };
+            const products = getProducts();
+            products.push(newProduct);
+            saveProducts(products);
+            this.reset();
+            render();
+            alert('Produto cadastrado com sucesso!');
+        });
+
+        window.deleteProduct = function(id) {
+            if (confirm('Deseja realmente excluir este produto?')) {
+                let products = getProducts();
+                products = products.filter(p => p.id !== id);
+                saveProducts(products);
+                render();
+            }
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAuth();
+            render();
+        });
+    </script>
+</body>
+</html>
