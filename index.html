@@ -9,7 +9,418 @@
     <!-- FontAwesome para Ícones -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- SheetJS (XLSX) para Exportação de Planilhas em Excel -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <!-- Firebase SDKs (v10 Modular) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Configuração do Firebase com as suas credenciais
+        const firebaseConfig = {
+            apiKey: "AIzaSyCx_-2Sq745H39NMJDnUN5k4qPatv6eQVg",
+            authDomain: "kronvalstore.firebaseapp.com",
+            projectId: "kronvalstore",
+            storageBucket: "kronvalstore.firebasestorage.app",
+            messagingSenderId: "44189269236",
+            appId: "1:44189269236:web:e9eec1e73bfa9b650072a1"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const produtosRef = collection(db, "produtos");
+        const pedidosRef = collection(db, "pedidos");
+
+        const ADMIN_PASSWORD = '1234';
+        const STORAGE_AUTH = 'minha_vitrine_auth_v6';
+
+        // Funções Globais
+        window.checkAuth = function() {
+            const isAuth = sessionStorage.getItem(STORAGE_AUTH) === 'true';
+            const clientNav = document.getElementById('client-nav-button');
+            const adminNav = document.getElementById('admin-nav-buttons');
+
+            if (isAuth) {
+                if (clientNav) clientNav.classList.add('d-none');
+                if (adminNav) adminNav.classList.remove('d-none');
+            } else {
+                if (clientNav) clientNav.classList.remove('d-none');
+                if (adminNav) adminNav.classList.add('d-none');
+            }
+        };
+
+        window.logoutAdmin = function() {
+            sessionStorage.removeItem(STORAGE_AUTH);
+            window.checkAuth();
+            alert('Você saiu do modo administrador.');
+        };
+
+        // Carregar Produtos do Firestore
+        async function carregarProdutos() {
+            const productList = document.getElementById('product-list');
+            const adminTable = document.getElementById('admin-product-table');
+            if (!productList) return;
+
+            productList.innerHTML = `<div class="col-12 text-center py-5"><div class="spinner-border text-danger" role="status"></div><p class="mt-2 text-muted">A carregar produtos da nuvem...</p></div>`;
+            adminTable.innerHTML = `<tr><td colspan="5" class="text-center text-muted">A carregar...</td></tr>`;
+
+            try {
+                const querySnapshot = await getDocs(produtosRef);
+                productList.innerHTML = '';
+                adminTable.innerHTML = '';
+
+                if (querySnapshot.empty) {
+                    productList.innerHTML = `<div class="col-12 text-center py-5"><p class="text-muted">Nenhum produto cadastrado na base de dados.</p></div>`;
+                    adminTable.innerHTML = `<tr><td colspan="5" class="text-center text-muted">Nenhum produto registado.</td></tr>`;
+                    return;
+                }
+
+                querySnapshot.forEach((docSnap) => {
+                    const product = docSnap.data();
+                    const id = docSnap.id;
+                    const code = product.code || ('PROD-' + id.substring(0, 4).toUpperCase());
+
+                    productList.innerHTML += `
+                        <div class="col">
+                            <div class="card h-100 product-card shadow-sm border-0">
+                                <img src="${product.image || 'https://via.placeholder.com/300'}" class="card-img-top" alt="${product.title}">
+                                <div class="card-body d-flex flex-column">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="badge bg-secondary">${code}</span>
+                                        <span class="text-success fw-bold fs-5">R$ ${product.price}</span>
+                                    </div>
+                                    <h5 class="card-title">${product.title}</h5>
+                                    <button class="btn btn-primary mt-auto" onclick="openCheckout('${id}', '${product.title}', '${product.price}', '${product.payLink || ''}', '${code}')">
+                                        <i class="fa-solid fa-cart-shopping me-1"></i> Comprar Agora
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    adminTable.innerHTML += `
+                        <tr>
+                            <td><span class="badge bg-secondary">${code}</span></td>
+                            <td><img src="${product.image}" width="40" height="40" class="rounded object-fit-cover"></td>
+                            <td>${product.title}</td>
+                            <td>R$ ${product.price}</td>
+                            <td>
+                                <button class="btn btn-warning btn-sm me-1 text-white" onclick="editarProduto('${id}')" title="Editar Produto">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteProduct('${id}')" title="Excluir Produto">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                carregarPedidos();
+            } catch (error) {
+                console.error("Erro ao carregar produtos:", error);
+                productList.innerHTML = `<div class="col-12 text-center text-danger py-5">Erro ao ligar à base de dados na nuvem.</div>`;
+            }
+        }
+
+        // Carregar Pedidos do Firestore
+        async function carregarPedidos() {
+            const ordersTable = document.getElementById('orders-table-body');
+            const ordersBadge = document.getElementById('orders-badge');
+            if (!ordersTable) return;
+
+            try {
+                const querySnapshot = await getDocs(pedidosRef);
+                ordersTable.innerHTML = '';
+                ordersBadge.innerText = querySnapshot.size;
+
+                if (querySnapshot.empty) {
+                    ordersTable.innerHTML = `<tr><td colspan="6" class="text-center text-muted">Nenhum pedido registrado ainda.</td></tr>`;
+                    return;
+                }
+
+                window.allOrders = [];
+
+                querySnapshot.forEach((docSnap) => {
+                    const order = docSnap.data();
+                    const id = docSnap.id;
+                    window.allOrders.push({ id, ...order });
+
+                    let badgeClass = 'bg-warning text-dark';
+                    if (order.status === 'Separando o Produto') badgeClass = 'bg-info text-dark';
+                    if (order.status === 'Enviado para o Endereço') badgeClass = 'bg-success';
+
+                    ordersTable.innerHTML += `
+                        <tr>
+                            <td>
+                                <strong class="text-primary">${order.orderCode}</strong><br>
+                                <small class="text-muted">${order.date}</small>
+                            </td>
+                            <td>
+                                <strong>${order.name}</strong><br>
+                                <small class="text-muted">${order.phone}</small>
+                            </td>
+                            <td>
+                                ${order.productName}<br>
+                                <span class="badge bg-secondary">${order.productCode}</span>
+                            </td>
+                            <td><small>${order.address}</small></td>
+                            <td><span class="badge ${badgeClass}">${order.status}</span></td>
+                            <td>
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                        Status
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><a class="dropdown-item" href="#" onclick="updateStatus('${id}', 'Aguardando Pagamento')">Aguardando Pagamento</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="updateStatus('${id}', 'Separando o Produto')">Separando o Produto</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="updateStatus('${id}', 'Enviado para o Endereço')">Enviado para o Endereço</a></li>
+                                    </ul>
+                                </div>
+                                <button class="btn btn-success btn-sm mt-1" onclick="sendWhatsAppManual('${order.phone}', '${order.name}', '${order.productName}', '${order.orderCode}', '${order.status}')" title="Avisar WhatsApp">
+                                    <i class="fa-brands fa-whatsapp"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                console.error("Erro ao carregar pedidos:", error);
+            }
+        }
+
+        // Função para Preparar Edição de Produto
+        window.editarProduto = async function(id) {
+            try {
+                const docRef = doc(db, "produtos", id);
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const prod = docSnap.data();
+                    document.getElementById('product-id-hidden').value = id;
+                    document.getElementById('title').value = prod.title || '';
+                    document.getElementById('price').value = prod.price || '';
+                    document.getElementById('image').value = prod.image || '';
+                    document.getElementById('payLink').value = prod.payLink || '';
+
+                    // Altera o texto do botão de submissão para indicar edição
+                    const btnSubmit = document.getElementById('btn-submit-product');
+                    btnSubmit.innerHTML = `<i class="fa-solid fa-pen-to-square me-1"></i> Atualizar Produto`;
+                    btnSubmit.className = "btn btn-warning w-100 text-white fw-bold";
+                    
+                    document.getElementById('form-product-title').innerText = "Editar Produto";
+                }
+            } catch (error) {
+                console.error("Erro ao carregar produto para edição:", error);
+                alert("Erro ao carregar dados para edição.");
+            }
+        };
+
+        // Abrir Modal de Checkout
+        window.openCheckout = function(id, title, price, payLink, code) {
+            document.getElementById('checkout-product-id').value = id;
+            document.getElementById('checkout-product-name').innerText = `${title} (${code})`;
+            document.getElementById('checkout-product-price').innerText = `R$ ${price}`;
+            document.getElementById('checkout-product-paylink').value = payLink;
+            document.getElementById('checkout-product-title-raw').value = title;
+            document.getElementById('checkout-product-code-raw').value = code;
+
+            const modal = new bootstrap.Modal(document.getElementById('checkoutModal'));
+            modal.show();
+        };
+
+        // Atualizar Status do Pedido
+        window.updateStatus = async function(id, newStatus) {
+            try {
+                const orderDoc = doc(db, "pedidos", id);
+                await updateDoc(orderDoc, { status: newStatus });
+                carregarPedidos();
+            } catch (error) {
+                console.error("Erro ao atualizar status:", error);
+                alert("Erro ao atualizar o status do pedido.");
+            }
+        };
+
+        // Eliminar Produto
+        window.deleteProduct = async function(id) {
+            if (confirm('Deseja realmente excluir este produto?')) {
+                try {
+                    await deleteDoc(doc(db, "produtos", id));
+                    carregarProdutos();
+                } catch (error) {
+                    console.error("Erro ao excluir produto:", error);
+                    alert("Erro ao excluir o produto.");
+                }
+            }
+        };
+
+        // Enviar WhatsApp
+        window.sendWhatsAppManual = function(phone, clientName, productName, orderCode, status) {
+            const cleanPhone = phone.replace(/\D/g, '');
+            let message = `Olá, ${clientName}! Seu pedido (*${orderCode}*) referente ao item *${productName}* está com status: *Aguardando Confirmação do Pagamento*. 📦✨`;
+            
+            if (status === 'Separando o Produto') {
+                message = `Olá, ${clientName}! Pagamento confirmado para o pedido (*${orderCode}*)! Já estamos separando o seu produto (*${productName}*) com todo o cuidado. 📦✨`;
+            } else if (status === 'Enviado para o Endereço') {
+                message = `Olá, ${clientName}! Seu pedido (*${orderCode}*) contendo *${productName}* já foi postado e está a caminho do seu endereço! 🚚💨`;
+            }
+
+            const url = `https://api.whatsapp.com/send?phone=55${cleanPhone}&text=${encodeURIComponent(message)}`;
+            window.open(url, '_blank');
+        };
+
+        // Exportar para Excel
+        window.exportOrdersToExcel = function() {
+            const orders = window.allOrders || [];
+            if (orders.length === 0) {
+                alert('Não há pedidos cadastrados para exportar!');
+                return;
+            }
+
+            const dataToExport = orders.map(order => ({
+                'Código do Pedido': order.orderCode,
+                'Data / Hora': order.date,
+                'Código do Produto': order.productCode,
+                'Produto': order.productName,
+                'Valor (R$)': order.productPrice,
+                'Nome do Cliente': order.name,
+                'Telefone / WhatsApp': order.phone,
+                'E-mail': order.email,
+                'Endereço de Entrega': order.address,
+                'Status do Pedido': order.status
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Pedidos");
+
+            worksheet['!cols'] = [
+                { wch: 15 }, { wch: 18 }, { wch: 16 }, { wch: 25 }, { wch: 12 },
+                { wch: 25 }, { wch: 18 }, { wch: 25 }, { wch: 40 }, { wch: 22 }
+            ];
+
+            const today = new Date().toISOString().split('T')[0];
+            XLSX.writeFile(workbook, `Pedidos_Vendas_${today}.xlsx`);
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            window.checkAuth();
+            carregarProdutos();
+
+            // Login Admin
+            const loginForm = document.getElementById('login-form');
+            if (loginForm) {
+                loginForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    const pass = document.getElementById('admin-password').value;
+                    if (pass === ADMIN_PASSWORD) {
+                        sessionStorage.setItem(STORAGE_AUTH, 'true');
+                        window.checkAuth();
+                        bootstrap.Modal.getInstance(document.getElementById('loginModal')).hide();
+                        this.reset();
+                        alert('Bem-vindo ao painel administrativo!');
+                    } else {
+                        alert('Senha incorreta!');
+                    }
+                });
+            }
+
+            // Cadastrar ou Atualizar Produto
+            const productForm = document.getElementById('product-form');
+            if (productForm) {
+                productForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+                    const editId = document.getElementById('product-id-hidden').value;
+                    
+                    const dadosProduto = {
+                        title: document.getElementById('title').value,
+                        price: document.getElementById('price').value,
+                        image: document.getElementById('image').value,
+                        payLink: document.getElementById('payLink').value,
+                        atualizadoEm: new Date()
+                    };
+
+                    try {
+                        if (editId) {
+                            // Atualizar produto existente
+                            const prodRef = doc(db, "produtos", editId);
+                            await updateDoc(prodRef, dadosProduto);
+                            alert('Produto atualizado com sucesso na nuvem!');
+                        } else {
+                            // Criar novo produto
+                            dadosProduto.code = 'PROD-' + Math.floor(100 + Math.random() * 900);
+                            dadosProduto.criadoEm = new Date();
+                            await addDoc(produtosRef, dadosProduto);
+                            alert('Produto cadastrado com sucesso na nuvem!');
+                        }
+
+                        this.reset();
+                        document.getElementById('product-id-hidden').value = '';
+                        
+                        // Restaurar botão de cadastro normal
+                        const btnSubmit = document.getElementById('btn-submit-product');
+                        btnSubmit.innerHTML = `<i class="fa-solid fa-plus me-1"></i> Cadastrar Produto`;
+                        btnSubmit.className = "btn btn-success w-100";
+                        document.getElementById('form-product-title').innerText = "Adicionar Novo Produto na Nuvem";
+
+                        carregarProdutos();
+                    } catch (error) {
+                        console.error("Erro ao salvar produto:", error);
+                        alert("Erro ao salvar produto no banco de dados.");
+                    }
+                });
+            }
+
+            // Checkout e Registo de Pedido
+            const checkoutForm = document.getElementById('checkout-form');
+            if (checkoutForm) {
+                checkoutForm.addEventListener('submit', async function(e) {
+                    e.preventDefault();
+
+                    const orderCode = 'PED-' + Math.floor(10000 + Math.random() * 90000);
+                    const productCode = document.getElementById('checkout-product-code-raw').value;
+                    const productName = document.getElementById('checkout-product-title-raw').value;
+                    const productPrice = document.getElementById('checkout-product-price').innerText.replace('R$ ', '');
+                    const payLink = document.getElementById('checkout-product-paylink').value;
+
+                    const newOrder = {
+                        orderCode: orderCode,
+                        productCode: productCode,
+                        productName: productName,
+                        productPrice: productPrice,
+                        date: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
+                        name: document.getElementById('client-name').value,
+                        phone: document.getElementById('client-phone').value,
+                        email: document.getElementById('client-email').value,
+                        address: document.getElementById('client-address').value,
+                        status: 'Aguardando Pagamento',
+                        criadoEm: new Date()
+                    };
+
+                    try {
+                        await addDoc(pedidosRef, newOrder);
+                        bootstrap.Modal.getInstance(document.getElementById('checkoutModal')).hide();
+                        this.reset();
+                        carregarPedidos();
+
+                        document.getElementById('modal-order-code').innerText = orderCode;
+                        document.getElementById('modal-product-code').innerText = productCode;
+                        document.getElementById('modal-product-title').innerText = productName;
+                        document.getElementById('modal-client-info').innerText = `${newOrder.name} • ${newOrder.phone}`;
+                        document.getElementById('btn-go-pay').href = payLink || '#';
+
+                        const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+                        successModal.show();
+                    } catch (error) {
+                        console.error("Erro ao salvar pedido:", error);
+                        alert("Erro ao registrar o pedido.");
+                    }
+                });
+            }
+        });
+    </script>
+
     <style>
         .product-card img {
             height: 200px;
@@ -18,7 +429,6 @@
         body {
             background-color: #f8f9fa;
         }
-        /* Substituição global da cor principal para #891924 nos botões e elementos primários */
         .btn-primary {
             background-color: #891924 !important;
             border-color: #891924 !important;
@@ -61,7 +471,7 @@
         </div>
     </nav>
 
-    <!-- Cabeçalho / Banner com a cor personalizada -->
+    <!-- Cabeçalho / Banner -->
     <header style="background-color: #891924 !important;" class="text-white text-center py-5 mb-4 shadow-sm">
         <div class="container">
             <h1 class="fw-bold">Nossos Produtos</h1>
@@ -72,7 +482,7 @@
     <!-- Vitrine -->
     <main class="container mb-5">
         <div id="product-list" class="row row-cols-1 row-cols-md-3 g-4">
-            <!-- Produtos inseridos via JS -->
+            <!-- Produtos inseridos via Firebase -->
         </div>
     </main>
 
@@ -97,7 +507,7 @@
         </div>
     </div>
 
-    <!-- Modal de Checkout (Coleta de Dados de Entrega) -->
+    <!-- Modal de Checkout -->
     <div class="modal fade" id="checkoutModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -108,6 +518,9 @@
                 <div class="modal-body">
                     <form id="checkout-form">
                         <input type="hidden" id="checkout-product-id">
+                        <input type="hidden" id="checkout-product-paylink">
+                        <input type="hidden" id="checkout-product-title-raw">
+                        <input type="hidden" id="checkout-product-code-raw">
                         
                         <div class="mb-3">
                             <label class="form-label fw-bold">Produto Selecionado:</label>
@@ -141,7 +554,7 @@
         </div>
     </div>
 
-    <!-- Modal de Notificação / Confirmação do Pedido para o Cliente -->
+    <!-- Modal Sucesso -->
     <div class="modal fade" id="successModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content p-3">
@@ -171,10 +584,6 @@
                         </li>
                     </ul>
 
-                    <p class="small text-muted text-center mb-4">
-                        Assim que o pagamento for confirmado, iniciaremos a separação do seu produto com todo o cuidado para envio! 📦✨
-                    </p>
-
                     <div class="d-grid gap-2">
                         <a id="btn-go-pay" href="#" target="_blank" class="btn btn-success py-2 fw-bold">
                             <i class="fa-solid fa-credit-card me-1"></i> Ir para o Link de Pagamento
@@ -186,7 +595,7 @@
         </div>
     </div>
 
-    <!-- Modal de Gestão de Pedidos (Admin) -->
+    <!-- Modal Gestão de Pedidos -->
     <div class="modal fade" id="ordersModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
@@ -197,7 +606,6 @@
                 <div class="modal-body">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <p class="text-muted mb-0">Acompanhe os códigos dos pedidos, dados dos clientes e gerencie o envio.</p>
-                        <!-- Botão de Exportação para Excel -->
                         <button class="btn btn-success btn-sm fw-bold" onclick="exportOrdersToExcel()">
                             <i class="fa-solid fa-file-excel me-1"></i> Exportar para Excel (.xlsx)
                         </button>
@@ -222,7 +630,7 @@
         </div>
     </div>
 
-    <!-- Modal Painel Produtos (Admin) -->
+    <!-- Modal Painel Produtos -->
     <div class="modal fade" id="adminModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -232,7 +640,8 @@
                 </div>
                 <div class="modal-body">
                     <form id="product-form" class="mb-4 bg-light p-3 rounded border">
-                        <h6 class="fw-bold mb-3">Adicionar Novo Produto</h6>
+                        <input type="hidden" id="product-id-hidden">
+                        <h6 id="form-product-title" class="fw-bold mb-3">Adicionar Novo Produto na Nuvem</h6>
                         <div class="mb-3">
                             <label for="title" class="form-label">Nome do Produto</label>
                             <input type="text" class="form-control" id="title" required placeholder="Ex: Camiseta Exclusiva">
@@ -246,10 +655,10 @@
                             <input type="url" class="form-control" id="image" required placeholder="https://exemplo.com/foto.jpg">
                         </div>
                         <div class="mb-3">
-                            <label for="payLink" class="form-label">Link de Pagamento Externo (Mercado Pago, etc)</label>
+                            <label for="payLink" class="form-label">Link de Pagamento Externo</label>
                             <input type="url" class="form-control" id="payLink" required placeholder="https://link.mercadopago.com.br/...">
                         </div>
-                        <button type="submit" class="btn btn-success w-100"><i class="fa-solid fa-plus me-1"></i> Cadastrar Produto</button>
+                        <button type="submit" id="btn-submit-product" class="btn btn-success w-100"><i class="fa-solid fa-plus me-1"></i> Cadastrar Produto</button>
                     </form>
 
                     <h6 class="fw-bold mb-3">Produtos Cadastrados</h6>
@@ -281,342 +690,5 @@
 
     <!-- Bootstrap 5 JS Bundle -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-    <script>
-        const ADMIN_PASSWORD = '1234'; 
-
-        const STORAGE_PRODUCTS = 'minha_vitrine_produtos_v6';
-        const STORAGE_ORDERS = 'minha_vitrine_pedidos_v6';
-        const STORAGE_AUTH = 'minha_vitrine_auth_v6';
-
-        const defaultProducts = [
-            {
-                id: 1,
-                code: 'PROD-101',
-                title: 'Exemplo: Produto Demonstrativo',
-                price: '99,90',
-                image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60',
-                payLink: 'https://www.mercadopago.com.br'
-            }
-        ];
-
-        function getProducts() {
-            const data = localStorage.getItem(STORAGE_PRODUCTS);
-            return data ? JSON.parse(data) : defaultProducts;
-        }
-
-        function saveProducts(products) {
-            localStorage.setItem(STORAGE_PRODUCTS, JSON.stringify(products));
-        }
-
-        function getOrders() {
-            const data = localStorage.getItem(STORAGE_ORDERS);
-            return data ? JSON.parse(data) : [];
-        }
-
-        function saveOrders(orders) {
-            localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
-        }
-
-        function checkAuth() {
-            const isAuth = sessionStorage.getItem(STORAGE_AUTH) === 'true';
-            const clientNav = document.getElementById('client-nav-button');
-            const adminNav = document.getElementById('admin-nav-buttons');
-
-            if (isAuth) {
-                clientNav.classList.add('d-none');
-                adminNav.classList.remove('d-none');
-            } else {
-                clientNav.classList.remove('d-none');
-                adminNav.classList.add('d-none');
-            }
-        }
-
-        document.getElementById('login-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const pass = document.getElementById('admin-password').value;
-            if (pass === ADMIN_PASSWORD) {
-                sessionStorage.setItem(STORAGE_AUTH, 'true');
-                checkAuth();
-                bootstrap.Modal.getInstance(document.getElementById('loginModal')).hide();
-                this.reset();
-                alert('Bem-vindo ao painel administrativo!');
-            } else {
-                alert('Senha incorreta!');
-            }
-        });
-
-        window.logoutAdmin = function() {
-            sessionStorage.removeItem(STORAGE_AUTH);
-            checkAuth();
-            alert('Você saiu do modo administrador.');
-        };
-
-        function render() {
-            const products = getProducts();
-            const productList = document.getElementById('product-list');
-            const adminTable = document.getElementById('admin-product-table');
-
-            productList.innerHTML = '';
-            adminTable.innerHTML = '';
-
-            products.forEach(product => {
-                if(!product.code) product.code = 'PROD-' + Math.floor(100 + Math.random() * 900);
-
-                productList.innerHTML += `
-                    <div class="col">
-                        <div class="card h-100 product-card shadow-sm border-0">
-                            <img src="${product.image}" class="card-img-top" alt="${product.title}">
-                            <div class="card-body d-flex flex-column">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="badge bg-secondary">${product.code}</span>
-                                    <span class="text-success fw-bold fs-5">R$ ${product.price}</span>
-                                </div>
-                                <h5 class="card-title">${product.title}</h5>
-                                <button class="btn btn-primary mt-auto" onclick="openCheckout(${product.id})">
-                                    <i class="fa-solid fa-cart-shopping me-1"></i> Comprar Agora
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-
-                adminTable.innerHTML += `
-                    <tr>
-                        <td><span class="badge bg-secondary">${product.code}</span></td>
-                        <td><img src="${product.image}" width="40" height="40" class="rounded object-fit-cover"></td>
-                        <td>${product.title}</td>
-                        <td>R$ ${product.price}</td>
-                        <td>
-                            <button class="btn btn-danger btn-sm" onclick="deleteProduct(${product.id})">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            renderOrders();
-        }
-
-        window.openCheckout = function(id) {
-            const products = getProducts();
-            const product = products.find(p => p.id === id);
-            if (!product) return;
-
-            document.getElementById('checkout-product-id').value = product.id;
-            document.getElementById('checkout-product-name').innerText = `${product.title} (${product.code})`;
-            document.getElementById('checkout-product-price').innerText = `R$ ${product.price}`;
-
-            const modal = new bootstrap.Modal(document.getElementById('checkoutModal'));
-            modal.show();
-        };
-
-        document.getElementById('checkout-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const productId = document.getElementById('checkout-product-id').value;
-            const products = getProducts();
-            const product = products.find(p => p.id == productId);
-
-            const orderCode = 'PED-' + Math.floor(10000 + Math.random() * 90000);
-            const productCode = product ? product.code : 'PROD-000';
-
-            const clientName = document.getElementById('client-name').value;
-            const clientPhone = document.getElementById('client-phone').value;
-            const clientEmail = document.getElementById('client-email').value;
-            const clientAddress = document.getElementById('client-address').value;
-
-            const newOrder = {
-                id: Date.now(),
-                orderCode: orderCode,
-                productCode: productCode,
-                date: new Date().toLocaleDateString('pt-BR') + ' ' + new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'}),
-                productName: product ? product.title : 'Produto',
-                productPrice: product ? product.price : '0,00',
-                name: clientName,
-                phone: clientPhone,
-                email: clientEmail,
-                address: clientAddress,
-                status: 'Aguardando Pagamento'
-            };
-
-            const orders = getOrders();
-            orders.unshift(newOrder);
-            saveOrders(orders);
-
-            bootstrap.Modal.getInstance(document.getElementById('checkoutModal')).hide();
-            this.reset();
-            renderOrders();
-
-            document.getElementById('modal-order-code').innerText = orderCode;
-            document.getElementById('modal-product-code').innerText = productCode;
-            document.getElementById('modal-product-title').innerText = product ? product.title : 'Produto';
-            document.getElementById('modal-client-info').innerText = `${clientName} • ${clientPhone}`;
-
-            if (product && product.payLink) {
-                document.getElementById('btn-go-pay').href = product.payLink;
-            }
-
-            const successModal = new bootstrap.Modal(document.getElementById('successModal'));
-            successModal.show();
-        });
-
-        function renderOrders() {
-            const orders = getOrders();
-            const ordersTable = document.getElementById('orders-table-body');
-            const ordersBadge = document.getElementById('orders-badge');
-
-            ordersBadge.innerText = orders.length;
-            ordersTable.innerHTML = '';
-
-            if (orders.length === 0) {
-                ordersTable.innerHTML = `<tr><td colspan="6" class="text-center text-muted">Nenhum pedido registrado ainda.</td></tr>`;
-                return;
-            }
-
-            orders.forEach(order => {
-                let badgeClass = 'bg-warning text-dark';
-                if (order.status === 'Separando o Produto') badgeClass = 'bg-info text-dark';
-                if (order.status === 'Enviado para o Endereço') badgeClass = 'bg-success';
-
-                ordersTable.innerHTML += `
-                    <tr>
-                        <td>
-                            <strong class="text-primary">${order.orderCode}</strong><br>
-                            <small class="text-muted">${order.date}</small>
-                        </td>
-                        <td>
-                            <strong>${order.name}</strong><br>
-                            <small class="text-muted">${order.phone}</small>
-                        </td>
-                        <td>
-                            ${order.productName}<br>
-                            <span class="badge bg-secondary">${order.productCode}</span>
-                        </td>
-                        <td><small>${order.address}</small></td>
-                        <td><span class="badge ${badgeClass}">${order.status}</span></td>
-                        <td>
-                            <div class="dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                    Status
-                                </button>
-                                <ul class="dropdown-menu">
-                                    <li><a class="dropdown-item" href="#" onclick="updateStatus(${order.id}, 'Aguardando Pagamento')">Aguardando Pagamento</a></li>
-                                    <li><a class="dropdown-item" href="#" onclick="updateStatus(${order.id}, 'Separando o Produto')">Separando o Produto</a></li>
-                                    <li><a class="dropdown-item" href="#" onclick="updateStatus(${order.id}, 'Enviado para o Endereço')">Enviado para o Endereço</a></li>
-                                </ul>
-                            </div>
-                            <button class="btn btn-success btn-sm mt-1" onclick="sendWhatsAppManual('${order.phone}', '${order.name}', '${order.productName}', '${order.orderCode}', '${order.status}')" title="Avisar WhatsApp">
-                                <i class="fa-brands fa-whatsapp"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-        }
-
-        window.updateStatus = function(id, newStatus) {
-            let orders = getOrders();
-            const order = orders.find(o => o.id === id);
-            if (order) {
-                order.status = newStatus;
-                saveOrders(orders);
-                renderOrders();
-            }
-        };
-
-        window.sendWhatsAppManual = function(phone, clientName, productName, orderCode, status) {
-            const cleanPhone = phone.replace(/\D/g, '');
-            let message = `Olá, ${clientName}! Seu pedido (*${orderCode}*) referente ao item *${productName}* está com status: *Aguardando Confirmação do Pagamento*. 📦✨`;
-            
-            if (status === 'Separando o Produto') {
-                message = `Olá, ${clientName}! Pagamento confirmado para o pedido (*${orderCode}*)! Já estamos separando o seu produto (*${productName}*) com todo o cuidado. 📦✨`;
-            } else if (status === 'Enviado para o Endereço') {
-                message = `Olá, ${clientName}! Seu pedido (*${orderCode}*) contendo *${productName}* já foi postado e está a caminho do seu endereço! 🚚💨`;
-            }
-
-            const url = `https://api.whatsapp.com/send?phone=55${cleanPhone}&text=${encodeURIComponent(message)}`;
-            window.open(url, '_blank');
-        };
-
-        // Função para Exportar a Tabela de Pedidos para Excel (.xlsx)
-        window.exportOrdersToExcel = function() {
-            const orders = getOrders();
-            if (orders.length === 0) {
-                alert('Não há pedidos cadastrados para exportar!');
-                return;
-            }
-
-            // Mapeamento dos dados para colunas formatadas em Português
-            const dataToExport = orders.map(order => ({
-                'Código do Pedido': order.orderCode,
-                'Data / Hora': order.date,
-                'Código do Produto': order.productCode,
-                'Produto': order.productName,
-                'Valor (R$)': order.productPrice,
-                'Nome do Cliente': order.name,
-                'Telefone / WhatsApp': order.phone,
-                'E-mail': order.email,
-                'Endereço de Entrega': order.address,
-                'Status do Pedido': order.status
-            }));
-
-            // Criação da planilha Excel
-            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Pedidos");
-
-            // Define largura automática para as colunas
-            const colWidths = [
-                { wch: 15 }, // Cód Pedido
-                { wch: 18 }, // Data/Hora
-                { wch: 16 }, // Cód Produto
-                { wch: 25 }, // Produto
-                { wch: 12 }, // Valor
-                { wch: 25 }, // Cliente
-                { wch: 18 }, // Telefone
-                { wch: 25 }, // Email
-                { wch: 40 }, // Endereço
-                { wch: 22 }  // Status
-            ];
-            worksheet['!cols'] = colWidths;
-
-            // Gera o nome do arquivo com a data atual (ex: Pedidos_Vendas_2026-10-09.xlsx)
-            const today = new Date().toISOString().split('T')[0];
-            XLSX.writeFile(workbook, `Pedidos_Vendas_${today}.xlsx`);
-        };
-
-        document.getElementById('product-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const newProduct = {
-                id: Date.now(),
-                code: 'PROD-' + Math.floor(100 + Math.random() * 900),
-                title: document.getElementById('title').value,
-                price: document.getElementById('price').value,
-                image: document.getElementById('image').value,
-                payLink: document.getElementById('payLink').value
-            };
-            const products = getProducts();
-            products.push(newProduct);
-            saveProducts(products);
-            this.reset();
-            render();
-            alert('Produto cadastrado com sucesso!');
-        });
-
-        window.deleteProduct = function(id) {
-            if (confirm('Deseja realmente excluir este produto?')) {
-                let products = getProducts();
-                products = products.filter(p => p.id !== id);
-                saveProducts(products);
-                render();
-            }
-        };
-
-        document.addEventListener('DOMContentLoaded', () => {
-            checkAuth();
-            render();
-        });
-    </script>
 </body>
 </html>
