@@ -15,7 +15,6 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
         // Configuração do Firebase com as suas credenciais
         const firebaseConfig = {
@@ -29,13 +28,15 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const auth = getAuth(app);
 
         const produtosRef = collection(db, "produtos");
         const pedidosRef = collection(db, "pedidos");
         const carrosselRef = collection(db, "carrossel");
 
-        // Banners Padrão
+        const ADMIN_PASSWORD = '1234';
+        const STORAGE_AUTH = 'minha_vitrine_auth_v6';
+
+        // Banners Padrão (Caso não haja salvos no banco)
         const defaultBanners = [
             {
                 id: 'banner1',
@@ -57,30 +58,28 @@
             }
         ];
 
-        // Observar Estado de Autenticação do Firebase Auth
-        onAuthStateChanged(auth, (user) => {
+        // Funções Globais
+        window.checkAuth = function() {
+            const isAuth = sessionStorage.getItem(STORAGE_AUTH) === 'true';
             const clientNav = document.getElementById('client-nav-button');
             const adminNav = document.getElementById('admin-nav-buttons');
 
-            if (user) {
+            if (isAuth) {
                 if (clientNav) clientNav.classList.add('d-none');
                 if (adminNav) adminNav.classList.remove('d-none');
             } else {
                 if (clientNav) clientNav.classList.remove('d-none');
                 if (adminNav) adminNav.classList.add('d-none');
             }
-        });
-
-        window.logoutAdmin = async function() {
-            try {
-                await signOut(auth);
-                alert('Você saiu do modo administrador.');
-            } catch (error) {
-                console.error("Erro ao sair:", error);
-            }
         };
 
-        // Carregar Banners do Carrossel
+        window.logoutAdmin = function() {
+            sessionStorage.removeItem(STORAGE_AUTH);
+            window.checkAuth();
+            alert('Você saiu do modo administrador.');
+        };
+
+        // Carregar Banners do Carrossel do Firestore
         async function carregarCarrossel() {
             try {
                 const querySnapshot = await getDocs(carrosselRef);
@@ -96,6 +95,7 @@
                     });
                 }
 
+                // Renderizar no HTML do Carrossel
                 banners.forEach((b, i) => {
                     const imgEl = document.getElementById(`carousel-img-${i + 1}`);
                     const titleEl = document.getElementById(`carousel-title-${i + 1}`);
@@ -105,6 +105,7 @@
                     if (titleEl) titleEl.innerText = b.title;
                     if (descEl) descEl.innerText = b.desc;
 
+                    // Preencher campos do Formulário no Painel Admin
                     const formImg = document.getElementById(`banner-img-${i + 1}`);
                     const formTitle = document.getElementById(`banner-title-${i + 1}`);
                     const formDesc = document.getElementById(`banner-desc-${i + 1}`);
@@ -388,6 +389,7 @@
         };
 
         document.addEventListener('DOMContentLoaded', () => {
+            window.checkAuth();
             carregarCarrossel();
             carregarProdutos();
 
@@ -397,22 +399,20 @@
                 carouselForm.addEventListener('submit', window.salvarCarrossel);
             }
 
-            // Login Admin com Firebase Authentication Seguro
+            // Login Admin
             const loginForm = document.getElementById('login-form');
             if (loginForm) {
-                loginForm.addEventListener('submit', async function(e) {
+                loginForm.addEventListener('submit', function(e) {
                     e.preventDefault();
-                    const email = document.getElementById('admin-email').value;
                     const pass = document.getElementById('admin-password').value;
-
-                    try {
-                        await signInWithEmailAndPassword(auth, email, pass);
+                    if (pass === ADMIN_PASSWORD) {
+                        sessionStorage.setItem(STORAGE_AUTH, 'true');
+                        window.checkAuth();
                         bootstrap.Modal.getInstance(document.getElementById('loginModal')).hide();
                         this.reset();
                         alert('Bem-vindo ao painel administrativo!');
-                    } catch (error) {
-                        console.error("Erro no login:", error);
-                        alert('E-mail ou senha incorretos!');
+                    } else {
+                        alert('Senha incorreta!');
                     }
                 });
             }
@@ -529,7 +529,7 @@
             color: #891924 !important;
         }
 
-        /* Estilos do Carrossel */
+        /* Estilos Personalizados do Carrossel Banner */
         .banner-carousel-item {
             height: 350px;
             position: relative;
@@ -585,39 +585,47 @@
         </div>
     </nav>
 
-    <!-- Carrossel de Banner -->
+    <!-- Carrossel de Banner Passando Fotos -->
     <header class="mb-4 shadow-sm">
         <div id="carouselBanner" class="carousel slide carousel-fade" data-bs-ride="carousel" data-bs-interval="4000">
+            <!-- Indicadores -->
             <div class="carousel-indicators">
                 <button type="button" data-bs-target="#carouselBanner" data-bs-slide-to="0" class="active" aria-current="true" aria-label="Slide 1"></button>
                 <button type="button" data-bs-target="#carouselBanner" data-bs-slide-to="1" aria-label="Slide 2"></button>
                 <button type="button" data-bs-target="#carouselBanner" data-bs-slide-to="2" aria-label="Slide 3"></button>
             </div>
 
+            <!-- Slides do Carrossel -->
             <div class="carousel-inner">
+                <!-- Slide 1 -->
                 <div class="carousel-item active banner-carousel-item">
-                    <img id="carousel-img-1" src="" alt="Slide 1">
+                    <img id="carousel-img-1" src="https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200&auto=format&fit=crop&q=80" alt="Slide 1">
                     <div class="banner-overlay">
-                        <h1 id="carousel-title-1" class="fw-bold display-5"></h1>
-                        <p id="carousel-desc-1" class="lead mb-0"></p>
+                        <h1 id="carousel-title-1" class="fw-bold display-5">Nossos Produtos</h1>
+                        <p id="carousel-desc-1" class="lead mb-0">Escolha seu produto, preencha seus dados de entrega e finalize com facilidade!</p>
                     </div>
                 </div>
+
+                <!-- Slide 2 -->
                 <div class="carousel-item banner-carousel-item">
-                    <img id="carousel-img-2" src="" alt="Slide 2">
+                    <img id="carousel-img-2" src="https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=1200&auto=format&fit=crop&q=80" alt="Slide 2">
                     <div class="banner-overlay">
-                        <h1 id="carousel-title-2" class="fw-bold display-5"></h1>
-                        <p id="carousel-desc-2" class="lead mb-0"></p>
+                        <h1 id="carousel-title-2" class="fw-bold display-5">Coleção Exclusiva</h1>
+                        <p id="carousel-desc-2" class="lead mb-0">Produtos selecionados com garantia de qualidade e envio rápido.</p>
                     </div>
                 </div>
+
+                <!-- Slide 3 -->
                 <div class="carousel-item banner-carousel-item">
-                    <img id="carousel-img-3" src="" alt="Slide 3">
+                    <img id="carousel-img-3" src="https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=1200&auto=format&fit=crop&q=80" alt="Slide 3">
                     <div class="banner-overlay">
-                        <h1 id="carousel-title-3" class="fw-bold display-5"></h1>
-                        <p id="carousel-desc-3" class="lead mb-0"></p>
+                        <h1 id="carousel-title-3" class="fw-bold display-5">KRONVAL Store</h1>
+                        <p id="carousel-desc-3" class="lead mb-0">Praticidade, elegância e facilidade na hora das suas compras.</p>
                     </div>
                 </div>
             </div>
 
+            <!-- Botões de Navegação -->
             <button class="carousel-control-prev" type="button" data-bs-target="#carouselBanner" data-bs-slide="prev">
                 <span class="carousel-control-prev-icon" aria-hidden="true"></span>
                 <span class="visually-hidden">Anterior</span>
@@ -631,10 +639,12 @@
 
     <!-- Vitrine -->
     <main class="container mb-5">
-        <div id="product-list" class="row row-cols-1 row-cols-md-3 g-4"></div>
+        <div id="product-list" class="row row-cols-1 row-cols-md-3 g-4">
+            <!-- Produtos inseridos via Firebase -->
+        </div>
     </main>
 
-    <!-- Modal de Login Admin (Firebase Auth Seguro) -->
+    <!-- Modal de Login Admin -->
     <div class="modal fade" id="loginModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-sm">
             <div class="modal-content">
@@ -645,14 +655,10 @@
                 <div class="modal-body">
                     <form id="login-form">
                         <div class="mb-3">
-                            <label for="admin-email" class="form-label">E-mail do Administrador</label>
-                            <input type="email" class="form-control" id="admin-email" required placeholder="admin@kronvalstore.com">
-                        </div>
-                        <div class="mb-3">
-                            <label for="admin-password" class="form-label">Senha</label>
+                            <label for="admin-password" class="form-label">Senha do Administrador</label>
                             <input type="password" class="form-control" id="admin-password" required placeholder="Digite a senha">
                         </div>
-                        <button type="submit" class="btn btn-primary w-100">Entrar com Segurança</button>
+                        <button type="submit" class="btn btn-primary w-100">Entrar no Sistema</button>
                     </form>
                 </div>
             </div>
@@ -782,7 +788,7 @@
         </div>
     </div>
 
-    <!-- Modal Painel Administrativo -->
+    <!-- Modal Painel Produtos & Banners -->
     <div class="modal fade" id="adminModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -791,6 +797,7 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- Abas de Navegação no Admin -->
                     <ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active fw-bold" id="prod-tab" data-bs-toggle="tab" data-bs-target="#tab-produtos" type="button" role="tab"><i class="fa-solid fa-boxes-stacked me-1"></i> Gerenciar Produtos</button>
@@ -842,30 +849,60 @@
                             </div>
                         </div>
 
-                        <!-- Aba 2: Banners do Carrossel -->
+                        <!-- Aba 2: Editar Banners do Carrossel -->
                         <div class="tab-pane fade" id="tab-carrossel" role="tabpanel">
                             <form id="carousel-form" class="bg-light p-3 rounded border">
-                                <h6 class="fw-bold mb-3"><i class="fa-solid fa-pen-to-square me-1"></i> Personalizar Banners</h6>
+                                <h6 class="fw-bold mb-3"><i class="fa-solid fa-pen-to-square me-1"></i> Personalizar Imagens e Textos do Carrossel</h6>
                                 
-                                <div class="card mb-3 p-3 shadow-sm">
+                                <!-- Banner 1 -->
+                                <div class="card mb-3 p-3 border-secondary-subtle shadow-sm">
                                     <h6 class="fw-bold text-primary mb-2">Slide 1</h6>
-                                    <div class="mb-2"><label class="form-label small mb-1">Título</label><input type="text" id="banner-title-1" class="form-control form-control-sm" required></div>
-                                    <div class="mb-2"><label class="form-label small mb-1">Descrição</label><input type="text" id="banner-desc-1" class="form-control form-control-sm" required></div>
-                                    <div class="mb-0"><label class="form-label small mb-1">URL da Imagem</label><input type="url" id="banner-img-1" class="form-control form-control-sm" required></div>
+                                    <div class="mb-2">
+                                        <label class="form-label small mb-1">Título</label>
+                                        <input type="text" id="banner-title-1" class="form-control form-control-sm" required>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small mb-1">Descrição</label>
+                                        <input type="text" id="banner-desc-1" class="form-control form-control-sm" required>
+                                    </div>
+                                    <div class="mb-0">
+                                        <label class="form-label small mb-1">URL da Imagem</label>
+                                        <input type="url" id="banner-img-1" class="form-control form-control-sm" required>
+                                    </div>
                                 </div>
 
-                                <div class="card mb-3 p-3 shadow-sm">
+                                <!-- Banner 2 -->
+                                <div class="card mb-3 p-3 border-secondary-subtle shadow-sm">
                                     <h6 class="fw-bold text-primary mb-2">Slide 2</h6>
-                                    <div class="mb-2"><label class="form-label small mb-1">Título</label><input type="text" id="banner-title-2" class="form-control form-control-sm" required></div>
-                                    <div class="mb-2"><label class="form-label small mb-1">Descrição</label><input type="text" id="banner-desc-2" class="form-control form-control-sm" required></div>
-                                    <div class="mb-0"><label class="form-label small mb-1">URL da Imagem</label><input type="url" id="banner-img-2" class="form-control form-control-sm" required></div>
+                                    <div class="mb-2">
+                                        <label class="form-label small mb-1">Título</label>
+                                        <input type="text" id="banner-title-2" class="form-control form-control-sm" required>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small mb-1">Descrição</label>
+                                        <input type="text" id="banner-desc-2" class="form-control form-control-sm" required>
+                                    </div>
+                                    <div class="mb-0">
+                                        <label class="form-label small mb-1">URL da Imagem</label>
+                                        <input type="url" id="banner-img-2" class="form-control form-control-sm" required>
+                                    </div>
                                 </div>
 
-                                <div class="card mb-3 p-3 shadow-sm">
+                                <!-- Banner 3 -->
+                                <div class="card mb-3 p-3 border-secondary-subtle shadow-sm">
                                     <h6 class="fw-bold text-primary mb-2">Slide 3</h6>
-                                    <div class="mb-2"><label class="form-label small mb-1">Título</label><input type="text" id="banner-title-3" class="form-control form-control-sm" required></div>
-                                    <div class="mb-2"><label class="form-label small mb-1">Descrição</label><input type="text" id="banner-desc-3" class="form-control form-control-sm" required></div>
-                                    <div class="mb-0"><label class="form-label small mb-1">URL da Imagem</label><input type="url" id="banner-img-3" class="form-control form-control-sm" required></div>
+                                    <div class="mb-2">
+                                        <label class="form-label small mb-1">Título</label>
+                                        <input type="text" id="banner-title-3" class="form-control form-control-sm" required>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small mb-1">Descrição</label>
+                                        <input type="text" id="banner-desc-3" class="form-control form-control-sm" required>
+                                    </div>
+                                    <div class="mb-0">
+                                        <label class="form-label small mb-1">URL da Imagem</label>
+                                        <input type="url" id="banner-img-3" class="form-control form-control-sm" required>
+                                    </div>
                                 </div>
 
                                 <button type="submit" class="btn btn-primary w-100 fw-bold">
